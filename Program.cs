@@ -6,14 +6,15 @@ class Program
 {
     static void Main(string[] args)
     {
-        var dbService = new DatabaseService();
+        var boendeService = new BoendeService();
+        var bokningService = new BokningService();
         bool keepRunning = true;
 
         while (keepRunning)
         {
             Console.Clear();
             Console.WriteLine("========================================");
-            Console.WriteLine("       VÄLKOMMEN TILL HOLIDAY MAKER     ");
+            Console.WriteLine("        VÄLKOMMEN TILL HOLIDAY MAKER    ");
             Console.WriteLine("========================================");
             Console.WriteLine("1. Visa alla boenden");
             Console.WriteLine("2. Sök lediga rum");
@@ -21,32 +22,36 @@ class Program
             Console.WriteLine("4. Visa kunds bokningar");
             Console.WriteLine("5. Ändra antal personer i bokning");
             Console.WriteLine("6. Avboka");
-            Console.WriteLine("7. Avsluta");
-            Console.Write("\nVälj ett alternativ (1-7): ");
+            Console.WriteLine("7. Registrera ny kund");
+            Console.WriteLine("8. Avsluta");
+            Console.Write("\nVälj ett alternativ (1-8): ");
 
-            string choice = Console.ReadLine();
+            string choice = Console.ReadLine() ?? string.Empty;
 
             switch (choice)
             {
                 case "1":
-                    VisaAllaBoendenFlode(dbService);
+                    VisaAllaBoendenFlode(boendeService);
                     break;
                 case "2":
-                    SokRumFlode(dbService);
+                    SokRumFlode(boendeService);
                     break;
                 case "3":
-                    BokaRumFlode(dbService);
+                    BokaRumFlode(boendeService, bokningService);
                     break;
                 case "4":
-                    VisaKundBokningarFlode(dbService);
-                    break;
+                VisaBokningarMenyFlode(bokningService);
+                break;
                 case "5":
-                    AndraBokningFlode(dbService);
+                    AndraBokningFlode(bokningService);
                     break;
                 case "6":
-                    AvbokaFlode(dbService);
+                    AvbokaFlode(bokningService);
                     break;
                 case "7":
+                    RegistreraKundFlode(bokningService);
+                    break;
+                case "8":
                     keepRunning = false;
                     Console.WriteLine("\nTack för att du använde Holiday Maker. Välkommen åter!");
                     break;
@@ -58,11 +63,11 @@ class Program
         }
     }
 
-    static void VisaAllaBoendenFlode(DatabaseService dbService)
+    static void VisaAllaBoendenFlode(BoendeService boendeService)
     {
         Console.Clear();
         Console.WriteLine("=== ALLA BOENDEN ===");
-        var boenden = dbService.GetAllBoenden();
+        var boenden = boendeService.GetAllBoenden();
         foreach (var b in boenden)
         {
             Console.WriteLine($"ID: {b.BoendeID} | {b.Namn} ({b.Ort}) | Pool: {(b.HarPool ? "Ja" : "Nej")} | Restaurang: {(b.HarRestaurang ? "Ja" : "Nej")} | Omdöme: {b.Omdome}/5 | Från {b.LagstaPrisPerNatt} kr/natt");
@@ -71,13 +76,16 @@ class Program
         Console.ReadKey();
     }
 
-    static void SokRumFlode(DatabaseService dbService)
+    static void SokRumFlode(BoendeService boendeService)
     {
         Console.Clear();
         Console.WriteLine("=== SÖK LEDIGA RUM ===");
+
+        var städer = boendeService.GetUnikaStäder();
+        Console.WriteLine("Tillgängliga orter: " + string.Join(", ", städer));
         
         Console.Write("Ange ort att söka i: ");
-        string ort = Console.ReadLine();
+        string ort = Console.ReadLine() ?? string.Empty;
 
         Console.Write("Incheckningsdatum (YYYY-MM-DD): ");
         if (!DateTime.TryParse(Console.ReadLine(), out DateTime incheck))
@@ -116,21 +124,29 @@ class Program
         int.TryParse(Console.ReadLine(), out int avstandCentrum);
 
         Console.Write("Sortera efter ('pris' för lägst pris, 'omdome' för högst omdöme, eller enter för ingen): ");
-        string sortering = Console.ReadLine()?.Trim().ToLower();
+        string sortering = Console.ReadLine()?.Trim().ToLower() ?? string.Empty;
 
-        dbService.SokLedigaRum(ort, incheck, utcheck, antalPers, pool, restaurang, avstandStrand, avstandCentrum, sortering);
+        boendeService.SokLedigaRum(ort, incheck, utcheck, antalPers, pool, restaurang, avstandStrand, avstandCentrum, sortering);
 
         Console.WriteLine("\nTryck på valfri knapp för att återgå.");
         Console.ReadKey();
     }
 
-    static void BokaRumFlode(DatabaseService dbService)
+    static void BokaRumFlode(BoendeService boendeService, BokningService bokningService)
     {
         Console.Clear();
         Console.WriteLine("=== SKAPA BOKNING ===");
         
         Console.Write("Ange KundID: ");
         if (!int.TryParse(Console.ReadLine(), out int kundId)) return;
+
+        if (!bokningService.KundenFinns(kundId))
+        {
+            Console.WriteLine($"\nFel: Kunde med ID {kundId} existerar inte i databasen.");
+            Console.WriteLine("\nTryck på valfri knapp för att återgå.");
+            Console.ReadKey();
+            return;
+        }
 
         Console.Write("Ange RumID som ska bokas: ");
         if (!int.TryParse(Console.ReadLine(), out int rumId)) return;
@@ -146,7 +162,15 @@ class Program
 
         try
         {
-            dbService.SkapaBokning(kundId, rumId, incheck, utcheck, antalPers);
+            var bekraftelse = bokningService.SkapaBokning(kundId, rumId, incheck, utcheck, antalPers);
+            
+            Console.WriteLine("\n========================================");
+            Console.WriteLine("          BOKNINGSBEKRÄFTELSE           ");
+            Console.WriteLine("========================================");
+            Console.WriteLine($"Bokningsnummer: {bekraftelse.BokningsID}");
+            Console.WriteLine($"Antal nätter:   {bekraftelse.AntalNatter}");
+            Console.WriteLine($"Totalpris:      {bekraftelse.TotalPris} kr");
+            Console.WriteLine("========================================");
             Console.WriteLine("\nBokningen skapades och sparades i databasen!");
         }
         catch (Exception ex)
@@ -158,22 +182,42 @@ class Program
         Console.ReadKey();
     }
 
-    static void VisaKundBokningarFlode(DatabaseService dbService)
+    static void VisaBokningarMenyFlode(BokningService bokningService)
     {
         Console.Clear();
-        Console.WriteLine("=== VISA KUNDENS BOKNINGAR ===");
-        Console.WriteLine("Tillgängliga kunder: 1: Anna, 2: Björn, 3: Cecilia, 4: David, 5: Erika");
-        Console.Write("\nAnge KundID: ");
-        
-        if (!int.TryParse(Console.ReadLine(), out int kundId)) return;
+        Console.WriteLine("=== VISA BOKNINGAR ===");
+        Console.WriteLine("1. Visa alla bokningar i systemet (sorterade efter datum)");
+        Console.WriteLine("2. Visa bokningar för en specifik kund");
+        Console.Write("\nVälj ett alternativ (1-2): ");
 
-        dbService.VisaBokningarForKund(kundId);
+        string val = Console.ReadLine() ?? string.Empty;
+
+        if (val == "1")
+        {
+            Console.Clear();
+            bokningService.VisaAllaBokningar();
+        }
+        else if (val == "2")
+        {
+            Console.Clear();
+            Console.WriteLine("=== VISA KUNDENS BOKNINGAR ===");
+            Console.WriteLine("Tillgängliga kunder: 1: Anna, 2: Björn, 3: Cecilia, 4: David, 5: Erika");
+            Console.Write("\nAnge KundID: ");
+            
+            if (!int.TryParse(Console.ReadLine(), out int kundId)) return;
+
+            bokningService.VisaBokningarForKund(kundId);
+        }
+        else
+        {
+            Console.WriteLine("\nOgiltigt val.");
+        }
 
         Console.WriteLine("\nTryck på valfri knapp för att återgå.");
         Console.ReadKey();
     }
 
-    static void AndraBokningFlode(DatabaseService dbService)
+    static void AndraBokningFlode(BokningService bokningService)
     {
         Console.Clear();
         Console.WriteLine("=== ÄNDRA ANTAL PERSONER ===");
@@ -183,20 +227,48 @@ class Program
         Console.Write("Ange nytt antal personer: ");
         if (!int.TryParse(Console.ReadLine(), out int nyAntal)) return;
 
-        dbService.UppdateraAntalPersoner(bokningsId, nyAntal);
+        bokningService.UppdateraAntalPersoner(bokningsId, nyAntal);
 
         Console.WriteLine("\nTryck på valfri knapp för att återgå.");
         Console.ReadKey();
     }
 
-    static void AvbokaFlode(DatabaseService dbService)
+    static void AvbokaFlode(BokningService bokningService)
     {
         Console.Clear();
         Console.WriteLine("=== AVBOKA / TA BORT BOKNING ===");
         Console.Write("Ange BokningsID som ska avbokas: ");
         if (!int.TryParse(Console.ReadLine(), out int bokningsId)) return;
 
-        dbService.TaBortBokning(bokningsId);
+        bokningService.TaBortBokning(bokningsId);
+
+        Console.WriteLine("\nTryck på valfri knapp för att återgå.");
+        Console.ReadKey();
+    }
+   static void RegistreraKundFlode(BokningService bokningService)
+    {
+        Console.Clear();
+        Console.WriteLine("=== REGISTRERA NY KUND ===");
+        
+        Console.Write("Ange kundens namn: ");
+        string namn = Console.ReadLine() ?? string.Empty;
+
+        Console.Write("Ange e-post: ");
+        string epost = Console.ReadLine() ?? string.Empty;
+
+        Console.Write("Ange telefonnummer: ");
+        string telefon = Console.ReadLine() ?? string.Empty;
+
+        try
+        {
+            bokningService.SkapaKund(namn, epost, telefon);
+            Console.WriteLine("\nKunden har sparats i databasen!");
+            Console.WriteLine("\nGlöm inte att uppdatera databasen för att få tillgång till nya kunder!");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\nKunde inte registrera kund: {ex.Message}");
+        }
 
         Console.WriteLine("\nTryck på valfri knapp för att återgå.");
         Console.ReadKey();

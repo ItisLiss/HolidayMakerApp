@@ -2,11 +2,10 @@ using System;
 using System.Collections.Generic;
 using MySql.Data.MySqlClient;
 using HolidayMaker.Models;
-using System.ComponentModel;
 
 namespace HolidayMaker.Services
 {
-    public class DatabaseService
+    public class BoendeService
     {
         private readonly string _connectionString = "Server=localhost; Port=3306; Database=HolidayMakerDB; Uid=root; Pwd=;";
 
@@ -17,7 +16,7 @@ namespace HolidayMaker.Services
             using (var connection = new MySqlConnection(_connectionString))
             {
                 connection.Open();
-                string query = "SELECT * FROM vw_BoendeDetaljer";
+                string query = "SELECT * FROM vw_Boendedetaljer";
 
                 using (var command = new MySqlCommand(query, connection))
                 {
@@ -28,7 +27,7 @@ namespace HolidayMaker.Services
                             boenden.Add(new Boende
                             {
                                 BoendeID = reader.GetInt32("BoendeID"),
-                                Namn = reader.GetString("Namn"),
+                                Namn = reader.GetString("BoendenNamn"),
                                 Ort = reader.GetString("Ort"),
                                 HarPool = reader.GetBoolean("HarPool"),
                                 HarRestaurang = reader.GetBoolean("HarRestaurang"),
@@ -53,7 +52,7 @@ namespace HolidayMaker.Services
             using (var connection = new MySqlConnection(_connectionString))
             {
                 connection.Open();
-                string query = "SELECT * FROM vw_BoendeDetaljer WHERE Ort LIKE @ort";
+                string query = "SELECT * FROM vw_Boendedetaljer WHERE Ort LIKE @ort";
 
                 using (var command = new MySqlCommand(query, connection))
                 {
@@ -66,7 +65,7 @@ namespace HolidayMaker.Services
                             boenden.Add(new Boende
                             {
                                 BoendeID = reader.GetInt32("BoendeID"),
-                                Namn = reader.GetString("Namn"),
+                                Namn = reader.GetString("BoendenNamn"),
                                 Ort = reader.GetString("Ort"),
                                 HarPool = reader.GetBoolean("HarPool"),
                                 HarRestaurang = reader.GetBoolean("HarRestaurang"),
@@ -93,11 +92,11 @@ namespace HolidayMaker.Services
                 connection.Open();
                 
                 string query = @"SELECT * 
-                                 FROM vw_BoendeDetaljer 
-                                 WHERE Ort LIKE @ort 
-                                 AND (@endastPool = 0 OR HarPool = 1) 
-                                 AND AvstandStrand <= @maxAvstand
-                                 AND LagstaPrisPerNatt > 0";
+                               FROM vw_BoendeDetaljer 
+                               WHERE Ort LIKE @ort 
+                               AND (@endastPool = 0 OR HarPool = 1) 
+                               AND AvstandStrand <= @maxAvstand
+                               AND LagstaPrisPerNatt > 0";
 
                 using (var command = new MySqlCommand(query, connection))
                 {
@@ -112,7 +111,7 @@ namespace HolidayMaker.Services
                             boenden.Add(new Boende
                             {
                                 BoendeID = reader.GetInt32("BoendeID"),
-                                Namn = reader.GetString("Namn"),
+                                Namn = reader.GetString("BoendenNamn"),
                                 Ort = reader.GetString("Ort"),
                                 HarPool = reader.GetBoolean("HarPool"),
                                 HarRestaurang = reader.GetBoolean("HarRestaurang"),
@@ -129,13 +128,13 @@ namespace HolidayMaker.Services
 
             return boenden;
         }
+
         public void SokLedigaRum(string ort, DateTime incheck, DateTime utcheck, int antalPersoner, bool endastPool, bool endastRestaurang, int maxAvstandStrand, int maxAvstandCentrum, string sortering)
         {
             using (var connection = new MySqlConnection(_connectionString))
             {
                 connection.Open();
 
-                // SQL-fråga som hanterar join, kapacitet, datumkoll för lediga rum samt valfria filter och sortering
                 string query = @"
                     SELECT r.RumID, bo.Namn AS HotellNamn, bo.Ort, r.Rumsnummer, r.Kapacitet, r.PrisPerNatt, bo.Omdome, bo.HarPool, bo.HarRestaurang, bo.AvstandStrand, bo.AvstandCentrum
                     FROM Rum r
@@ -166,7 +165,6 @@ namespace HolidayMaker.Services
                     query += " AND bo.AvstandCentrum <= @maxAvstandCentrum";
                 }
 
-                // Sortering
                 if (sortering == "pris")
                 {
                     query += " ORDER BY r.PrisPerNatt ASC";
@@ -239,60 +237,6 @@ namespace HolidayMaker.Services
             return rumList;
         }
 
-        public void SkapaBokning(int kundId, int rumId, DateTime incheck, DateTime utcheck, int antalPersoner)
-        {
-            using (var connection = new MySqlConnection(_connectionString))
-            {
-                connection.Open();
-
-                using (var command = new MySqlCommand("sp_SkapaBokning", connection))
-                {
-                    command.CommandType = System.Data.CommandType.StoredProcedure;
-                    command.Parameters.AddWithValue("@p_KundID", kundId);
-                    command.Parameters.AddWithValue("@p_RumID", rumId);
-                    command.Parameters.AddWithValue("@p_Incheck", incheck.ToString("yyyy-MM-dd"));
-                    command.Parameters.AddWithValue("@p_Utcheck", utcheck.ToString("yyyy-MM-dd"));
-                    command.Parameters.AddWithValue("@p_AntalPersoner", antalPersoner);
-
-                    command.ExecuteNonQuery();
-                }
-            }
-        }
-        public void VisaBokningarForKund(int kundId)
-        {
-            using (var connection = new MySqlConnection(_connectionString))
-            {
-                connection.Open();
-                string query = @"
-                    SELECT b.BokningsID, bo.Namn AS HotellNamn, bo.Ort, r.Rumsnummer, b.IncheckningsDatum, b.UtcheckningsDatum, b.AntalPersoner
-                    FROM bokningar b
-                    JOIN Rum r ON b.RumID = r.RumID
-                    JOIN Boenden bo ON r.BoendeID = bo.BoendeID
-                    WHERE b.KundID = @kundId";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@kundId", kundId);
-
-                    using (var reader = command.ExecuteReader())
-                    {
-                        bool hasRows = false;
-                        Console.WriteLine($"\n--- Bokningar för KundID {kundId} ---");
-
-                        while (reader.Read())
-                        {
-                            hasRows = true;
-                            Console.WriteLine($"[BokningsID: {reader.GetInt32("BokningsID")}] {reader.GetString("HotellNamn")} ({reader.GetString("Ort")}) | Rum: {reader.GetString("Rumsnummer")} | {reader.GetDateTime("IncheckningsDatum"):yyyy-MM-dd} till {reader.GetDateTime("UtcheckningsDatum"):yyyy-MM-dd} | Personer: {reader.GetInt32("AntalPersoner")}");
-                        }
-
-                        if (!hasRows)
-                        {
-                            Console.WriteLine("Inga aktiva bokningar hittades för denna kund.");
-                        }
-                    }
-                }
-            }
-        }
         public List<string> GetUnikaStäder()
         {
             var städer = new List<string>();
@@ -315,72 +259,6 @@ namespace HolidayMaker.Services
             }
 
             return städer;
-        }
-        public void TaBortBokning(int bokningsId)
-        {
-            using (var connection = new MySqlConnection(_connectionString))
-            {
-                connection.Open();
-                string query = "DELETE FROM bokningar WHERE BokningsID = @bokningsId";
-
-                using (var command = new MySqlCommand(query, connection))
-                {
-                    command.Parameters.AddWithValue("@bokningsId", bokningsId);
-                    int rowsAffected = command.ExecuteNonQuery();
-
-                    if (rowsAffected > 0)
-                    {
-                        Console.WriteLine($"\nBokning med ID {bokningsId} har avbokats och tagits bort.");
-                    }
-                    else
-                    {
-                        Console.WriteLine("\nIngen bokning med det ID:t hittades.");
-                    }
-                }
-            }
-        }
-
-        public void UppdateraAntalPersoner(int bokningsId, int nyAntalPersoner)
-        {
-            using (var connection = new MySqlConnection(_connectionString))
-            {
-                connection.Open();
-                
-                string checkQuery = @"
-                    SELECT r.Kapacitet 
-                    FROM bokningar b 
-                    JOIN Rum r ON b.RumID = r.RumID 
-                    WHERE b.BokningsID = @bokningsId";
-
-                using (var checkCmd = new MySqlCommand(checkQuery, connection))
-                {
-                    checkCmd.Parameters.AddWithValue("@bokningsId", bokningsId);
-                    var result = checkCmd.ExecuteScalar();
-
-                    if (result == null)
-                    {
-                        Console.WriteLine("\nBokningen hittades inte.");
-                        return;
-                    }
-
-                    int kapacitet = Convert.ToInt32(result);
-                    if (nyAntalPersoner > kapacitet)
-                    {
-                        Console.WriteLine($"\nFel: Det nya antalet personer ({nyAntalPersoner}) överstiger rummets maximala kapacitet ({kapacitet}).");
-                        return;
-                    }
-                }
-
-                // Om det ryms, uppdaterar vi
-                string updateQuery = "UPDATE bokningar SET AntalPersoner = @antal WHERE BokningsID = @bokningsId";
-                using (var updateCmd = new MySqlCommand(updateQuery, connection))
-                {
-                    updateCmd.Parameters.AddWithValue("@antal", nyAntalPersoner);
-                    updateCmd.Parameters.AddWithValue("@bokningsId", bokningsId);
-                    updateCmd.ExecuteNonQuery();
-                    Console.WriteLine("\nAntalet personer har uppdaterats för bokningen!");
-                }
-            }
         }
     }
 }
