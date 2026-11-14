@@ -149,7 +149,6 @@ namespace HolidayMaker.Services
                             AND b.UtcheckningsDatum > @incheck
                     )";
 
-                // Lägg till valfria filter dynamiskt
                 if (endastPool)
                 {
                     query += " AND bo.HarPool = 1";
@@ -347,7 +346,6 @@ namespace HolidayMaker.Services
             {
                 connection.Open();
                 
-                // Först kollar vi att det nya antalet ryms i rummets kapacitet
                 string checkQuery = @"
                     SELECT r.Kapacitet 
                     FROM bokningar b 
